@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk.BlazorWebAssembly">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>nrdr</AssemblyName>
+    <RootNamespace>nrdr</RootNamespace>
+    <OverrideHtmlAssetPlaceholders>true</OverrideHtmlAssetPlaceholders>
+    <BlazorDisableThrowNavigationException>true</BlazorDisableThrowNavigationException>
+    <CanonicalProjectDir>$(MSBuildProjectDirectory)/../canonical/</CanonicalProjectDir>
+    <CanonicalDistDir>$(MSBuildProjectDirectory)/wwwroot/canonical/</CanonicalDistDir>
+    <TrunkExecutable Condition="'$(TrunkExecutable)' == ''">trunk</TrunkExecutable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" Version="10.0.5" />
+    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.DevServer" Version="10.0.5" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup Condition="Exists('$(CanonicalProjectDir)Cargo.toml')">
+    <CanonicalInputs Include="$(CanonicalProjectDir)Cargo.toml;$(CanonicalProjectDir)Cargo.lock;$(CanonicalProjectDir)Trunk.toml;$(CanonicalProjectDir)index.html" />
+    <CanonicalInputs Include="$(CanonicalProjectDir)src/**/*" />
+    <CanonicalInputs Include="$(CanonicalProjectDir)web/**/*" />
+  </ItemGroup>
+
+  <Target Name="BuildCanonicalBundle"
+          BeforeTargets="Build;Publish"
+          Condition="Exists('$(CanonicalProjectDir)Cargo.toml')"
+          Inputs="@(CanonicalInputs)"
+          Outputs="$(CanonicalDistDir).buildstamp">
+    <RemoveDir Directories="$(CanonicalDistDir)" Condition="Exists('$(CanonicalDistDir)')" />
+    <MakeDir Directories="$(CanonicalDistDir)" />
+    <Exec WorkingDirectory="$(CanonicalProjectDir)"
+          Command="NO_COLOR=false &quot;$(TrunkExecutable)&quot; build --release --dist &quot;$(CanonicalDistDir)&quot; --public-url /canonical/" />
+    <Touch Files="$(CanonicalDistDir).buildstamp" AlwaysCreate="true" />
+  </Target>
+
+</Project>

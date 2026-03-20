@@ -1,0 +1,190 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: 1
+  NUGET_PACKAGES: ${{ github.workspace }}/.nuget/packages
+  CARGO_HOME: ${{ github.workspace }}/.cargo
+
+permissions:
+  contents: write
+
+jobs:
+  create-release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.get_version.outputs.version }}
+      tag: ${{ steps.get_tag.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get tag
+        id: get_tag
+        run: echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+
+      - name: Get version from tag
+        id: get_version
+        run: echo "version=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release (generate notes, mark latest)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.get_tag.outputs.tag }}"
+          VERSION="${{ steps.get_version.outputs.version }}"
+          NOTES_FILE="${RUNNER_TEMP}/release-notes-${TAG}.md"
+          gh api -X POST "repos/${GITHUB_REPOSITORY}/releases/generate-notes" \
+            -f tag_name="$TAG" \
+            -f target_commitish="${GITHUB_SHA}" \
+            --jq .body > "$NOTES_FILE"
+
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release edit "$TAG" \
+              --title "Release ${VERSION}" \
+              --notes-file "$NOTES_FILE" \
+              --repo "$GITHUB_REPOSITORY" \
+              --latest
+          else
+            gh release create "$TAG" \
+              --title "Release ${VERSION}" \
+              --notes-file "$NOTES_FILE" \
+              --repo "$GITHUB_REPOSITORY" \
+              --latest
+          fi
+
+  build:
+    name: Build
+    needs: create-release
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Checkout canonical
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/canonical
+          path: canonical
+          token: ${{ secrets.CANONICAL_REPO_TOKEN != '' && secrets.CANONICAL_REPO_TOKEN || github.token }}
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Install WebAssembly workload
+        run: dotnet workload install wasm-tools
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: .nuget/packages
+          key: ${{ runner.os }}-nuget-release-${{ hashFiles('**/*.csproj', '**/*.props', '**/*.targets', '**/global.json', '**/packages.lock.json') }}
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: .cargo/registry
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('canonical/Cargo.lock') }}
+
+      - name: Cache cargo index
+        uses: actions/cache@v4
+        with:
+          path: .cargo/git
+          key: ${{ runner.os }}-cargo-git-${{ hashFiles('canonical/Cargo.lock') }}
+
+      - name: Cache canonical target directory
+        uses: actions/cache@v4
+        with:
+          path: canonical/target
+          key: ${{ runner.os }}-canonical-target-release-${{ hashFiles('canonical/Cargo.lock') }}
+
+      - name: Install Trunk
+        run: cargo install trunk --locked
+
+      - name: Add cargo bin to PATH
+        run: echo "${CARGO_HOME}/bin" >> "$GITHUB_PATH"
+
+      - name: Restore dependencies
+        run: dotnet restore nrdr.csproj --nologo
+
+      - name: Publish app
+        run: >
+          dotnet publish nrdr.csproj
+          --configuration Release
+          --no-restore
+          --nologo
+          --output artifacts/publish
+          /p:CanonicalProjectDir=${{ github.workspace }}/canonical/
+          /p:TrunkExecutable=${{ github.workspace }}/.cargo/bin/trunk
+
+      - name: Package release bundle
+        run: |
+          set -euo pipefail
+
+          VERSION="${{ needs.create-release.outputs.version }}"
+          BASE="nrdr-v${VERSION}-static-site"
+          STAGING_DIR="artifacts/${BASE}"
+          ARCHIVE="artifacts/${BASE}.tar.gz"
+          CHECKSUM="artifacts/${BASE}.sha256"
+
+          rm -rf "$STAGING_DIR"
+          mkdir -p "$STAGING_DIR"
+
+          cp -R artifacts/publish/wwwroot/. "$STAGING_DIR/"
+          cp README.md "$STAGING_DIR/"
+
+          tar czf "$ARCHIVE" -C artifacts "$BASE"
+          sha256sum "$ARCHIVE" > "$CHECKSUM"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-assets
+          path: |
+            artifacts/nrdr-v${{ needs.create-release.outputs.version }}-static-site.tar.gz
+            artifacts/nrdr-v${{ needs.create-release.outputs.version }}-static-site.sha256
+          if-no-files-found: error
+
+  upload:
+    name: Upload
+    needs: [create-release, build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: release-assets
+          path: dist
+
+      - name: Upload release assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          files=(./dist/*)
+          if (( ${#files[@]} == 0 )); then
+            echo "No release assets found; skipping upload."
+            exit 0
+          fi
+          gh release upload "${{ needs.create-release.outputs.tag }}" "${files[@]}" --clobber --repo "$GITHUB_REPOSITORY"

@@ -1,0 +1,445 @@
+@page "/"
+@implements IDisposable
+@inject IAuthSessionService AuthSessionService
+@inject IAuthUiConfigurationService AuthUiConfigurationService
+@inject IShellGameCatalogService ShellGameCatalogService
+@inject IShellInteropService ShellInteropService
+
+<PageTitle>@DocumentTitle</PageTitle>
+
+<HeadContent>
+    <link rel="icon" type="@CurrentGame.TabIconType" href="@CurrentGame.TabIconHref" />
+</HeadContent>
+
+<div class="shell-page">
+    <header class="shell-header" aria-label="Shell header">
+        <div class="shell-brand">
+            <div class="shell-brand-mark" aria-hidden="true">
+                <svg viewBox="0 0 64 64" focusable="false">
+                    <defs>
+                        <linearGradient id="shellBrandBg" x1="0" y1="0" x2="1" y2="1">
+                            <stop offset="0%" stop-color="#1a2a3c" />
+                            <stop offset="100%" stop-color="#09111a" />
+                        </linearGradient>
+                        <linearGradient id="shellBrandGold" x1="0" y1="0" x2="1" y2="1">
+                            <stop offset="0%" stop-color="#f3d08a" />
+                            <stop offset="100%" stop-color="#b98a34" />
+                        </linearGradient>
+                    </defs>
+                    <rect width="64" height="64" fill="#05080c" />
+                    <path d="M32 4 54 14v19c0 13-8.8 22.7-22 27C18.8 55.7 10 46 10 33V14Z" fill="url(#shellBrandBg)" stroke="url(#shellBrandGold)" stroke-width="3" />
+                    <path d="M24 45V20h5.4l10.2 14.7V20H45v25h-5.3L29.4 30.3V45Z" fill="#f0c984" />
+                </svg>
+            </div>
+
+            <div class="shell-brand-copy">
+                <span class="shell-brand-caption">Nrdr Shell</span>
+                <strong class="shell-brand-title">@DocumentTitle</strong>
+            </div>
+        </div>
+
+        <button class="shell-user-status @UserStatus.StateClass"
+                type="button"
+                title="@UserStatus.ActionLabel"
+                aria-label="@UserStatus.ActionLabel"
+                disabled="@IsAuthBusy"
+                @onclick="OpenAuthDialog">
+            @if (UserStatus.IsLoggedIn)
+            {
+                @if (!string.IsNullOrWhiteSpace(UserStatus.AvatarUrl))
+                {
+                    <img class="shell-user-avatar-image" src="@UserStatus.AvatarUrl" alt="" referrerpolicy="no-referrer" />
+                }
+                else
+                {
+                    <span class="shell-user-avatar" aria-hidden="true">@UserStatus.AvatarText</span>
+                }
+                <span class="shell-user-copy">
+                    <span class="shell-user-caption">Pilot</span>
+                    <span class="shell-user-name">@UserStatus.DisplayName</span>
+                </span>
+            }
+            else
+            {
+                <span class="shell-user-copy shell-user-copy-logged-out">
+                    <span class="shell-user-name">Log ind</span>
+                </span>
+            }
+        </button>
+    </header>
+
+    @if (IsAuthDialogOpen)
+    {
+        <div class="shell-auth-overlay" @onclick="CloseAuthDialog">
+            <div class="shell-auth-card"
+                 role="dialog"
+                 aria-modal="true"
+                 aria-labelledby="shell-auth-title"
+                 @onclick:stopPropagation="true">
+                <div class="shell-auth-header">
+                    <div>
+                        <p class="shell-auth-caption">Access</p>
+                        <h2 class="shell-auth-title" id="shell-auth-title">
+                            @(UserStatus.IsLoggedIn ? "Account" : "Sign In")
+                        </h2>
+                    </div>
+
+                    <button class="shell-auth-close"
+                            type="button"
+                            aria-label="Close dialog"
+                            disabled="@IsAuthBusy"
+                            @onclick="CloseAuthDialog">
+                        <span aria-hidden="true">x</span>
+                    </button>
+                </div>
+
+                @if (!string.IsNullOrWhiteSpace(AuthErrorMessage))
+                {
+                    <div class="shell-auth-error">@AuthErrorMessage</div>
+                }
+
+                @if (UserStatus.IsLoggedIn)
+                {
+                    <div class="shell-auth-account-card">
+                        @if (!string.IsNullOrWhiteSpace(UserStatus.AvatarUrl))
+                        {
+                            <img class="shell-auth-account-image" src="@UserStatus.AvatarUrl" alt="" referrerpolicy="no-referrer" />
+                        }
+                        else
+                        {
+                            <span class="shell-auth-account-avatar" aria-hidden="true">@UserStatus.AvatarText</span>
+                        }
+
+                        <div class="shell-auth-account-copy">
+                            <span class="shell-auth-account-name">@UserStatus.DisplayName</span>
+                            @if (!string.IsNullOrWhiteSpace(UserStatus.Email))
+                            {
+                                <span class="shell-auth-account-meta">@UserStatus.Email</span>
+                            }
+                            <span class="shell-auth-account-meta">Signed in with @UserStatus.ProviderLabel</span>
+                        </div>
+                    </div>
+
+                    <button class="shell-auth-provider-button shell-auth-signout-button"
+                            type="button"
+                            disabled="@IsAuthBusy"
+                            @onclick="SignOutAsync">
+                        <span class="shell-auth-provider-badge">-</span>
+                        <span>Sign out</span>
+                    </button>
+                }
+                else if (AuthUi.IsEnabled)
+                {
+                    <p class="shell-auth-copy">
+                        Choose a provider to sign in. Firebase keeps the browser session local to this app, so the published shell can stay fully static.
+                    </p>
+
+                    <div class="shell-auth-provider-grid">
+                        @foreach (var provider in AuthUi.Providers)
+                        {
+                            <button class="shell-auth-provider-button"
+                                    type="button"
+                                    disabled="@IsAuthBusy"
+                                    @onclick="() => SignInAsync(provider.Key)">
+                                <span class="shell-auth-provider-badge">@provider.BadgeText</span>
+                                <span>@provider.ButtonLabel</span>
+                            </button>
+                        }
+                    </div>
+                }
+                else
+                {
+                    <p class="shell-auth-copy">
+                        Firebase authentication is not configured yet. Add the Firebase web app settings in <code>wwwroot/appsettings*.json</code> to enable Google and Apple sign-in.
+                    </p>
+                }
+            </div>
+        </div>
+    }
+
+    <div class="shell-stat-row" aria-label="Top stats">
+        @foreach (var stat in TopStats)
+        {
+            <section class="shell-stat-card">
+                <svg class="shell-stat-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                    <path d="@stat.Path" />
+                </svg>
+                <span class="shell-stat-label">@stat.Label</span>
+            </section>
+        }
+    </div>
+
+    <div class="shell-board">
+        <aside class="shell-action-column" aria-label="Left controls">
+            @foreach (var action in LeftActions)
+            {
+                <button class="shell-action-button @(ActiveActionId == action.Id ? "is-active" : null)"
+                        type="button"
+                        title="@action.Title"
+                        aria-label="@action.Title"
+                        @onclick="() => TriggerActionAsync(action)">
+                    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                        <path d="@action.Path" />
+                    </svg>
+                </button>
+            }
+        </aside>
+
+        <section class="shell-center-panel" aria-label="@CurrentGame.ViewportLabel">
+            <div class="shell-viewport-frame">
+                <iframe class="shell-game-frame"
+                        data-shell-game-frame="true"
+                        data-game-slug="@CurrentGame.Slug"
+                        src="@CurrentGame.FrameSrc"
+                        title="@CurrentGame.ViewportLabel"
+                        loading="eager"
+                        allow="autoplay; fullscreen"></iframe>
+            </div>
+        </section>
+
+        <aside class="shell-action-column" aria-label="Right controls">
+            @foreach (var action in RightActions)
+            {
+                <button class="shell-action-button @(ActiveActionId == action.Id ? "is-active" : null)"
+                        type="button"
+                        title="@action.Title"
+                        aria-label="@action.Title"
+                        @onclick="() => TriggerActionAsync(action)">
+                    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                        <path d="@action.Path" />
+                    </svg>
+                </button>
+            }
+        </aside>
+    </div>
+
+    <div class="shell-stat-row" aria-label="Bottom stats">
+        @foreach (var stat in BottomStats)
+        {
+            <section class="shell-stat-card">
+                <svg class="shell-stat-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                    <path d="@stat.Path" />
+                </svg>
+                <span class="shell-stat-label">@stat.Label</span>
+            </section>
+        }
+    </div>
+</div>
+
+@code {
+    private ShellGame CurrentGame { get; set; } = ShellGame.CreateFallback("canonical");
+    private AuthUiConfiguration AuthUi { get; set; } = AuthUiConfiguration.Disabled([]);
+    private ShellUserStatus UserStatus { get; set; } = ShellUserStatus.LoggedOut();
+    private string? ActiveActionId { get; set; }
+    private bool IsAuthDialogOpen { get; set; }
+    private bool IsAuthBusy { get; set; }
+    private string? AuthErrorMessage { get; set; }
+    private string DocumentTitle => $"Nrdr / {CurrentGame.Title}";
+
+    private static readonly ShellStat[] TopStats =
+    [
+        new("stat1", "M12 3 20 7v10l-8 4-8-4V7Z"),
+        new("stat2", "M4 5h16v4H4Zm2 6h12v8H6Z"),
+        new("stat3", "M12 2 21 12 12 22 3 12Z"),
+        new("stat4", "M5 4h14v14H5Zm3 3v8h8V7Z"),
+        new("stat5", "M12 3 4 7v10l8 4 8-4V7Zm0 3.2 4 1.8v5.9L12 16l-4-2.1V8Z")
+    ];
+
+    private static readonly ShellStat[] BottomStats =
+    [
+        new("stat6", "M4 6h16v3H4Zm0 5h10v3H4Zm0 5h16v3H4Z"),
+        new("stat7", "M12 2a9 9 0 1 0 0 18 9 9 0 0 0 0-18Zm0 4a5 5 0 1 1 0 10 5 5 0 0 1 0-10Z"),
+        new("stat8", "M13 2 4 14h5l-1 8 9-12h-5l1-8Z"),
+        new("stat9", "M3 12 12 3l9 9-9 9-9-9Zm9-4.2L7.8 12 12 16.2 16.2 12Z"),
+        new("stat10", "M5 5h14v14H5Zm7 2.5A4.5 4.5 0 1 0 16.5 12 4.5 4.5 0 0 0 12 7.5Z")
+    ];
+
+    private static readonly ShellAction[] LeftActions =
+    [
+        new("left-1", "Left control 1", "left", "M12 2 21 12 12 22 3 12Z"),
+        new("left-2", "Left control 2", "left", "M4 5h7l-2 3 5 4-5 4 2 3H4l5-7Z"),
+        new("left-3", "Left control 3", "left", "M13 2 4 14h5l-1 8 9-12h-5l1-8Z"),
+        new("left-4", "Left control 4", "left", "M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm0 4.5a5.5 5.5 0 1 1 0 11 5.5 5.5 0 0 1 0-11Z"),
+        new("left-5", "Left control 5", "left", "M7 3h10l4 9-4 9H7L3 12Z"),
+        new("left-6", "Left control 6", "left", "M12 4 20 8v8l-8 4-8-4V8Z"),
+        new("left-7", "Left control 7", "left", "M4 12 12 4l8 8-8 8-8-8Zm8-3.2L8.8 12 12 15.2 15.2 12Z"),
+        new("left-8", "Left control 8", "left", "M5 5h14v14H5Zm3 3v8h8V8Z"),
+        new("left-9", "Left control 9", "left", "M12 3 4 7v10l8 4 8-4V7Zm0 3.1 4.5 2.2v5.4L12 16l-4.5-2.3V8.3Z"),
+        new("left-10", "Left control 10", "left", "M12 2 6 6v12l6 4 6-4V6Zm-2 6h4v8h-4Z")
+    ];
+
+    private static readonly ShellAction[] RightActions =
+    [
+        new("right-1", "Right control 1", "right", "M12 3 21 8v8l-9 5-9-5V8Z"),
+        new("right-2", "Right control 2", "right", "M6 4h12v4h-4v12h-4V8H6Z"),
+        new("right-3", "Right control 3", "right", "M5 7h14v10H5Zm3-4h8v3H8Zm0 15h8v3H8Z"),
+        new("right-4", "Right control 4", "right", "M12 2 2 8l10 14L22 8Zm0 5.3L17.2 9 12 16.2 6.8 9Z"),
+        new("right-5", "Right control 5", "right", "M4 6h16v3H4Zm0 5h10v3H4Zm0 5h16v3H4Z"),
+        new("right-6", "Right control 6", "right", "M3 12 12 3l9 9-9 9-9-9Zm9-4.2L7.8 12 12 16.2 16.2 12Z"),
+        new("right-7", "Right control 7", "right", "M5 4h14v5h-3v11H8V9H5Z"),
+        new("right-8", "Right control 8", "right", "M12 2 3 5v6c0 5 3.8 8.7 9 11 5.2-2.3 9-6 9-11V5Zm0 4 4 2v3.8c0 3.3-2.2 5.9-4 7.1-1.8-1.2-4-3.8-4-7.1V8Z"),
+        new("right-9", "Right control 9", "right", "M4 4h16v16H4Zm2.5 2.5v11h11v-11Z"),
+        new("right-10", "Right control 10", "right", "M12 2 4 6v12l8 4 8-4V6Zm0 2.6 5 2.1v10.1l-5 2.5-5-2.5V6.7Z")
+    ];
+
+    protected override async Task OnInitializedAsync()
+    {
+        AuthUi = AuthUiConfigurationService.GetConfiguration();
+        AuthSessionService.Changed += HandleAuthChanged;
+
+        var gameTask = ShellGameCatalogService.GetCurrentGameAsync();
+        var authTask = InitializeAuthAsync();
+
+        CurrentGame = await gameTask;
+        await authTask;
+        RefreshUserStatus();
+    }
+
+    public void Dispose()
+    {
+        AuthSessionService.Changed -= HandleAuthChanged;
+    }
+
+    private async Task InitializeAuthAsync()
+    {
+        try
+        {
+            await AuthSessionService.InitializeAsync();
+        }
+        catch (Exception ex)
+        {
+            AuthErrorMessage = ex.Message;
+        }
+    }
+
+    private void OpenAuthDialog()
+    {
+        AuthErrorMessage = null;
+        IsAuthDialogOpen = true;
+    }
+
+    private void CloseAuthDialog()
+    {
+        if (IsAuthBusy)
+        {
+            return;
+        }
+
+        AuthErrorMessage = null;
+        IsAuthDialogOpen = false;
+    }
+
+    private async Task SignInAsync(string providerKey)
+    {
+        AuthErrorMessage = null;
+        IsAuthBusy = true;
+
+        try
+        {
+            await AuthSessionService.SignInAsync(providerKey);
+            IsAuthDialogOpen = false;
+        }
+        catch (Exception ex)
+        {
+            AuthErrorMessage = ex.Message;
+        }
+        finally
+        {
+            IsAuthBusy = false;
+        }
+    }
+
+    private async Task SignOutAsync()
+    {
+        AuthErrorMessage = null;
+        IsAuthBusy = true;
+
+        try
+        {
+            await AuthSessionService.SignOutAsync();
+            IsAuthDialogOpen = false;
+        }
+        catch (Exception ex)
+        {
+            AuthErrorMessage = ex.Message;
+        }
+        finally
+        {
+            IsAuthBusy = false;
+        }
+    }
+
+    private async Task TriggerActionAsync(ShellAction action)
+    {
+        ActiveActionId = action.Id;
+        await ShellInteropService.PostActionAsync(CurrentGame.Slug, action.Id, action.Side);
+    }
+
+    private void HandleAuthChanged()
+    {
+        RefreshUserStatus();
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    private void RefreshUserStatus()
+    {
+        UserStatus = ShellUserStatus.FromUser(AuthSessionService.CurrentUser);
+    }
+
+    private sealed record ShellStat(string Label, string Path);
+    private sealed record ShellAction(string Id, string Title, string Side, string Path);
+    private sealed record ShellUserStatus(
+        bool IsLoggedIn,
+        string DisplayName,
+        string AvatarText,
+        string ActionLabel,
+        string? Email,
+        string? AvatarUrl,
+        string ProviderLabel)
+    {
+        public string StateClass => IsLoggedIn ? "is-logged-in" : "is-logged-out";
+
+        public static ShellUserStatus LoggedOut() => new(
+            false,
+            "Guest",
+            string.Empty,
+            "Open sign in options",
+            null,
+            null,
+            "guest");
+
+        public static ShellUserStatus FromUser(AppUser? user)
+        {
+            return user is null
+                ? LoggedOut()
+                : LoggedIn(user.DisplayName, user.Email, user.PictureUrl, user.ProviderKey);
+        }
+
+        public static ShellUserStatus LoggedIn(string displayName, string? email, string? avatarUrl, string providerKey)
+        {
+            var safeName = string.IsNullOrWhiteSpace(displayName) ? "User" : displayName.Trim();
+            var initials = string.Concat(
+                safeName
+                    .Split(' ', StringSplitOptions.RemoveEmptyEntries)
+                    .Take(2)
+                    .Select(part => char.ToUpperInvariant(part[0])));
+
+            return new(
+                true,
+                safeName,
+                string.IsNullOrWhiteSpace(initials) ? "U" : initials,
+                "Open account panel",
+                email,
+                avatarUrl,
+                HumanizeProvider(providerKey));
+        }
+
+        private static string HumanizeProvider(string providerKey) =>
+            providerKey switch
+            {
+                "google" => "Google",
+                "apple" => "Apple",
+                _ => "external provider"
+            };
+    }
+}
