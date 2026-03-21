@@ -6,6 +6,7 @@ This repo now has the first auth slice wired in:
 - the session now lives fully in the browser via Firebase web auth persistence
 - the header button opens a dialog
 - Google and Apple are the two supported providers in code
+- the visible provider buttons are controlled by `Authentication:Firebase:EnabledProviders`
 
 The remaining work is mostly Firebase and Apple console setup.
 
@@ -64,6 +65,7 @@ Section:
 ```json
 "Authentication": {
   "Firebase": {
+    "EnabledProviders": [ "google" ],
     "WebApp": {
       "ApiKey": "",
       "AuthDomain": "",
@@ -81,6 +83,7 @@ Notes:
 
 - The Firebase web config is not a secret in the same way as server credentials.
 - Still keep environment-specific values out of committed production config where possible.
+- Add `"apple"` to `EnabledProviders` only after Apple is enabled and configured in Firebase.
 
 ## 3. Enable Google Sign-In In Firebase
 

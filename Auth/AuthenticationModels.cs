@@ -7,6 +7,7 @@ public sealed class FirebaseAuthenticationOptions
     public const string SectionName = "Authentication:Firebase";
 
     public FirebaseWebAppOptions WebApp { get; set; } = new();
+    public List<string> EnabledProviders { get; set; } = ["google"];
 }
 
 public sealed class FirebaseWebAppOptions

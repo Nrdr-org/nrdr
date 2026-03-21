@@ -1,5 +1,5 @@
 const frameSelector = "[data-shell-game-frame]";
-const firebaseSdkVersion = "12.7.0";
+const firebaseSdkVersion = "12.11.0";
 
 let firebaseSdkPromise;
 let firebaseBundlePromise;

@@ -23,8 +23,17 @@ public sealed class AuthUiConfigurationService(
 {
     public AuthUiConfiguration GetConfiguration()
     {
-        var providers = providerCatalog.GetProviders();
-        var webApp = options.Value.WebApp;
+        var settings = options.Value;
+        var enabledProviders = settings.EnabledProviders
+            .Where(key => !string.IsNullOrWhiteSpace(key))
+            .Select(key => key.Trim())
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var providers = providerCatalog
+            .GetProviders()
+            .Where(provider => enabledProviders.Count == 0 || enabledProviders.Contains(provider.Key))
+            .ToArray();
+        var webApp = settings.WebApp;
+
         return webApp.IsConfigured
             ? new AuthUiConfiguration(true, webApp.Clone(), providers)
             : AuthUiConfiguration.Disabled(providers);
