@@ -106,36 +106,37 @@ jobs:
       - name: Publish
         run: dotnet publish --configuration Release
 
-      - name: Package
-        run: |
-          set -euo pipefail
-          VERSION="${{ needs.create-release.outputs.version }}"
-          ARCHIVE="nrdr-v${VERSION}.tar.gz"
-          CHECKSUM="nrdr-v${VERSION}.sha256"
-
-          tar czf "${ARCHIVE}" -C bin/Release/net10.0/publish/wwwroot .
-          sha256sum "${ARCHIVE}" > "${CHECKSUM}"
-
-          mkdir -p dist-release
-          mv "${ARCHIVE}" "${CHECKSUM}" dist-release/
-
-      - name: Upload artifacts
+      - name: Upload publish output
         uses: actions/upload-artifact@v4
         with:
-          name: release-assets
-          path: dist-release/*
+          name: publish-output
+          path: bin/Release/net10.0/publish/wwwroot/
           if-no-files-found: error
 
   upload:
-    name: Upload
+    name: Upload Release Assets
     needs: [create-release, build]
     runs-on: ubuntu-latest
     steps:
       - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
-          name: release-assets
-          path: dist-release
+          name: publish-output
+          path: publish-output
+
+      - name: Package
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="${{ needs.create-release.outputs.version }}"
+          ARCHIVE="nrdr-v${VERSION}.tar.gz"
+          CHECKSUM="nrdr-v${VERSION}.sha256"
+
+          tar czf "${ARCHIVE}" -C publish-output .
+          sha256sum "${ARCHIVE}" > "${CHECKSUM}"
+
+          mkdir -p dist-release
+          mv "${ARCHIVE}" "${CHECKSUM}" dist-release/
 
       - name: Upload release assets
         env:
@@ -150,3 +151,37 @@ jobs:
             exit 0
           fi
           gh release upload "${{ needs.create-release.outputs.tag }}" "${files[@]}" --clobber --repo "$GITHUB_REPOSITORY"
+
+  deploy:
+    name: Deploy to Firebase
+    needs: [create-release, build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: publish-output
+          path: deploy-output
+
+      - name: Prepare firebase.json for deployment
+        shell: bash
+        run: |
+          cat > firebase.json << 'EOF'
+          {
+            "hosting": {
+              "public": "deploy-output",
+              "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
+              "rewrites": [{ "source": "**", "destination": "/index.html" }]
+            }
+          }
+          EOF
+
+      - name: Deploy to Firebase Hosting
+        uses: FirebaseExtended/action-hosting-deploy@v0
+        with:
+          repoToken: ${{ secrets.GITHUB_TOKEN }}
+          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          channelId: live
+          projectId: nrdr-f23fa
