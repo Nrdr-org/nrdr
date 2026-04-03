@@ -1,4 +1,4 @@
-name: Release
+name: Stage
 
 on:
   push:
@@ -91,7 +91,7 @@ jobs:
           FIREBASE_MEASUREMENT_ID: ${{ secrets.FIREBASE_MEASUREMENT_ID }}
         run: |
           set -euo pipefail
-          CONFIG="wwwroot/appsettings.Production.json"
+          CONFIG="wwwroot/appsettings.Staging.json"
           sed -i "s|__FIREBASE_API_KEY__|${FIREBASE_API_KEY}|g" "$CONFIG"
           sed -i "s|__FIREBASE_AUTH_DOMAIN__|${FIREBASE_AUTH_DOMAIN}|g" "$CONFIG"
           sed -i "s|__FIREBASE_PROJECT_ID__|${FIREBASE_PROJECT_ID}|g" "$CONFIG"

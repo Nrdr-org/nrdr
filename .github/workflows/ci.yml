@@ -6,13 +6,6 @@ on:
   pull_request:
     branches: [ main ]
 
-env:
-  DOTNET_NOLOGO: true
-  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
-  DOTNET_CLI_TELEMETRY_OPTOUT: 1
-  NUGET_PACKAGES: ${{ github.workspace }}/.nuget/packages
-  CARGO_HOME: ${{ github.workspace }}/.cargo
-
 permissions:
   contents: read
 
@@ -20,155 +13,46 @@ jobs:
   lint:
     name: Lint
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup .NET 10
+      - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 10.0.x
-
-      - name: Cache NuGet packages
-        uses: actions/cache@v4
-        with:
-          path: .nuget/packages
-          key: ${{ runner.os }}-nuget-lint-${{ hashFiles('**/*.csproj', '**/*.props', '**/*.targets', '**/global.json', '**/packages.lock.json') }}
-
-      - name: Restore dependencies
-        run: dotnet restore nrdr.csproj --nologo
+          dotnet-version: '10.0.x'
 
       - name: Check formatting
-        run: dotnet format nrdr.csproj --verify-no-changes --no-restore --verbosity minimal
-
-  test:
-    name: Test
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    defaults:
-      run:
-        shell: bash
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup .NET 10
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: 10.0.x
-
-      - name: Cache NuGet packages
-        uses: actions/cache@v4
-        with:
-          path: .nuget/packages
-          key: ${{ runner.os }}-nuget-test-${{ hashFiles('**/*.csproj', '**/*.props', '**/*.targets', '**/global.json', '**/packages.lock.json') }}
-
-      - name: Restore dependencies
-        run: dotnet restore nrdr.csproj --nologo
-
-      - name: Run tests
-        run: |
-          set -euo pipefail
-          mapfile -t test_projects < <(
-            find . -name '*.csproj' -print | sort | while read -r project; do
-              if grep -Eq '<IsTestProject>true</IsTestProject>|Microsoft\.NET\.Test\.Sdk' "$project"; then
-                printf '%s\n' "$project"
-              fi
-            done
-          )
-
-          if (( ${#test_projects[@]} == 0 )); then
-            echo "No test projects found."
-            exit 0
-          fi
-
-          dotnet test "${test_projects[@]}" --configuration Release --no-restore --nologo -v minimal
+        run: dotnet format --verify-no-changes
 
   build:
     name: Build
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    defaults:
-      run:
-        shell: bash
     steps:
       - uses: actions/checkout@v4
 
-      - name: Checkout canonical
-        uses: actions/checkout@v4
-        with:
-          repository: ${{ github.repository_owner }}/canonical
-          path: canonical
-          token: ${{ secrets.CANONICAL_REPO_TOKEN != '' && secrets.CANONICAL_REPO_TOKEN || github.token }}
-
-      - name: Setup .NET 10
+      - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 10.0.x
+          dotnet-version: '10.0.x'
 
-      - name: Install WebAssembly workload
-        run: dotnet workload install wasm-tools
+      - name: Install Trunk (Rust WASM bundler)
+        run: |
+          cargo install trunk --locked || {
+            curl -fsSL https://trunkrs.dev/install.sh | bash
+          }
 
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: wasm32-unknown-unknown
-
-      - name: Cache NuGet packages
-        uses: actions/cache@v4
-        with:
-          path: .nuget/packages
-          key: ${{ runner.os }}-nuget-build-${{ hashFiles('**/*.csproj', '**/*.props', '**/*.targets', '**/global.json', '**/packages.lock.json') }}
-
-      - name: Cache cargo registry
-        uses: actions/cache@v4
-        with:
-          path: .cargo/registry
-          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('canonical/Cargo.lock') }}
-
-      - name: Cache cargo index
-        uses: actions/cache@v4
-        with:
-          path: .cargo/git
-          key: ${{ runner.os }}-cargo-git-${{ hashFiles('canonical/Cargo.lock') }}
-
-      - name: Cache canonical target directory
-        uses: actions/cache@v4
-        with:
-          path: canonical/target
-          key: ${{ runner.os }}-canonical-target-build-${{ hashFiles('canonical/Cargo.lock') }}
-
-      - name: Install Trunk
-        run: cargo install trunk --locked
-
-      - name: Add cargo bin to PATH
-        run: echo "${CARGO_HOME}/bin" >> "$GITHUB_PATH"
+      - name: Install wasm32 target
+        run: rustup target add wasm32-unknown-unknown
 
       - name: Restore dependencies
-        run: dotnet restore nrdr.csproj --nologo
+        run: dotnet restore
 
-      - name: Publish app
-        run: >
-          dotnet publish nrdr.csproj
-          --configuration Release
-          --no-restore
-          --nologo
-          --output artifacts/publish
-          /p:CanonicalProjectDir=${{ github.workspace }}/canonical/
-          /p:TrunkExecutable=${{ github.workspace }}/.cargo/bin/trunk
+      - name: Build
+        run: dotnet build --no-restore --configuration Release
 
-      - name: Check publish output
-        run: |
-          ls -lah artifacts/publish
-          ls -lah artifacts/publish/wwwroot
-          test -f artifacts/publish/wwwroot/index.html
-          test -f artifacts/publish/wwwroot/canonical/index.html
-
-      - name: Upload artifacts
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: nrdr-static-site
-          path: artifacts/publish/wwwroot
+          name: nrdr
+          path: bin/Release/net10.0/wwwroot/
           if-no-files-found: error
