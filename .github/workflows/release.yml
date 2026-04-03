@@ -71,14 +71,15 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
-      - name: Install Trunk (Rust WASM bundler)
+      - name: Download latest canonical WASM bundle
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
         run: |
-          cargo install trunk --locked || {
-            curl -fsSL https://trunkrs.dev/install.sh | bash
-          }
-
-      - name: Install wasm32 target
-        run: rustup target add wasm32-unknown-unknown
+          set -euo pipefail
+          ASSET_URL=$(gh release view --repo Nrdr-org/canonical --json assets --jq '.assets[] | select(.name | test("canonical-.*\\.tar\\.gz$")) | .url' | head -1)
+          mkdir -p wwwroot/canonical
+          curl -fsSL -H "Authorization: token ${GH_TOKEN}" -H "Accept: application/octet-stream" "${ASSET_URL}" | tar xz -C wwwroot/canonical
 
       - name: Replace Firebase config placeholders
         env:

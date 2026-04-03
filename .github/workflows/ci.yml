@@ -35,15 +35,6 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
-      - name: Install Trunk (Rust WASM bundler)
-        run: |
-          cargo install trunk --locked || {
-            curl -fsSL https://trunkrs.dev/install.sh | bash
-          }
-
-      - name: Install wasm32 target
-        run: rustup target add wasm32-unknown-unknown
-
       - name: Restore dependencies
         run: dotnet restore
 
