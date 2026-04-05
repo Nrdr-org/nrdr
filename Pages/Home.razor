@@ -80,7 +80,11 @@
                     <div>
                         <p class="shell-auth-caption">Access</p>
                         <h2 class="shell-auth-title" id="shell-auth-title">
-                            @(UserStatus.IsLoggedIn ? "Account" : "Sign In")
+                            @(UserStatus.IsLoggedIn ? "Account" : AuthMode switch {
+                                AuthFormMode.SignUp => "Sign Up",
+                                AuthFormMode.ForgotPassword => "Reset Password",
+                                _ => "Sign In"
+                            })
                         </h2>
                     </div>
 
@@ -130,22 +134,125 @@
                 }
                 else if (AuthUi.IsEnabled)
                 {
-                    <p class="shell-auth-copy">
-                        Choose a provider to sign in. Firebase keeps the browser session local to this app, so the published shell can stay fully static.
-                    </p>
+                    @if (AuthMode == AuthFormMode.ForgotPassword)
+                    {
+                        <p class="shell-auth-copy">
+                            Enter your email address and we'll send you a link to reset your password.
+                        </p>
 
-                    <div class="shell-auth-provider-grid">
-                        @foreach (var provider in AuthUi.Providers)
-                        {
+                        <div class="shell-auth-email-form">
+                            <input class="shell-auth-input"
+                                   type="email"
+                                   placeholder="Email"
+                                   disabled="@IsAuthBusy"
+                                   @bind="EmailInput" />
+
                             <button class="shell-auth-provider-button"
                                     type="button"
                                     disabled="@IsAuthBusy"
-                                    @onclick="() => SignInAsync(provider.Key)">
-                                <span class="shell-auth-provider-badge">@provider.BadgeText</span>
-                                <span>@provider.ButtonLabel</span>
+                                    @onclick="SendPasswordResetAsync">
+                                <span class="shell-auth-provider-badge">@("\u2709")</span>
+                                <span>Send reset link</span>
                             </button>
+                        </div>
+
+                        @if (PasswordResetSent)
+                        {
+                            <p class="shell-auth-success">Check your inbox for the reset link.</p>
                         }
-                    </div>
+
+                        <button class="shell-auth-link-button"
+                                type="button"
+                                disabled="@IsAuthBusy"
+                                @onclick="() => SwitchAuthMode(AuthFormMode.SignIn)">
+                            Back to sign in
+                        </button>
+                    }
+                    else
+                    {
+                        <div class="shell-auth-email-form">
+                            <input class="shell-auth-input"
+                                   type="email"
+                                   placeholder="Email"
+                                   disabled="@IsAuthBusy"
+                                   @bind="EmailInput" />
+
+                            <input class="shell-auth-input"
+                                   type="password"
+                                   placeholder="Password"
+                                   disabled="@IsAuthBusy"
+                                   @bind="PasswordInput" />
+
+                            @if (AuthMode == AuthFormMode.SignUp)
+                            {
+                                <button class="shell-auth-provider-button"
+                                        type="button"
+                                        disabled="@IsAuthBusy"
+                                        @onclick="SignUpWithEmailAsync">
+                                    <span class="shell-auth-provider-badge">+</span>
+                                    <span>Create account</span>
+                                </button>
+                            }
+                            else
+                            {
+                                <button class="shell-auth-provider-button"
+                                        type="button"
+                                        disabled="@IsAuthBusy"
+                                        @onclick="SignInWithEmailAsync">
+                                    <span class="shell-auth-provider-badge">@("\u2192")</span>
+                                    <span>Sign in with email</span>
+                                </button>
+                            }
+                        </div>
+
+                        <div class="shell-auth-mode-links">
+                            @if (AuthMode == AuthFormMode.SignUp)
+                            {
+                                <button class="shell-auth-link-button"
+                                        type="button"
+                                        disabled="@IsAuthBusy"
+                                        @onclick="() => SwitchAuthMode(AuthFormMode.SignIn)">
+                                    Already have an account? Sign in
+                                </button>
+                            }
+                            else
+                            {
+                                <button class="shell-auth-link-button"
+                                        type="button"
+                                        disabled="@IsAuthBusy"
+                                        @onclick="() => SwitchAuthMode(AuthFormMode.SignUp)">
+                                    Don't have an account? Sign up
+                                </button>
+
+                                <button class="shell-auth-link-button"
+                                        type="button"
+                                        disabled="@IsAuthBusy"
+                                        @onclick="() => SwitchAuthMode(AuthFormMode.ForgotPassword)">
+                                    Forgot password?
+                                </button>
+                            }
+                        </div>
+
+                        @if (AuthUi.Providers.Count > 0)
+                        {
+                            <div class="shell-auth-divider">
+                                <span>or</span>
+                            </div>
+
+                            <div class="shell-auth-provider-grid">
+                                @foreach (var provider in AuthUi.Providers)
+                                {
+                                    <button class="shell-auth-provider-button"
+                                            type="button"
+                                            disabled="@IsAuthBusy"
+                                            @onclick="() => SignInAsync(provider.Key)">
+                                        <span class="shell-auth-provider-badge">@provider.BadgeText</span>
+                                        <span>@provider.ButtonLabel</span>
+                                    </button>
+                                }
+                            </div>
+                        }
+                    }
                 }
                 else
                 {
@@ -235,6 +342,12 @@
     private bool IsAuthBusy { get; set; }
     private string? AuthErrorMessage { get; set; }
     private string DocumentTitle => $"Nrdr / {CurrentGame.Title}";
+    private AuthFormMode AuthMode { get; set; } = AuthFormMode.SignIn;
+    private string EmailInput { get; set; } = string.Empty;
+    private string PasswordInput { get; set; } = string.Empty;
+    private bool PasswordResetSent { get; set; }
+
+    private enum AuthFormMode { SignIn, SignUp, ForgotPassword }
 
     private static readonly ShellStat[] TopStats =
     [
@@ -315,6 +428,7 @@
     private void OpenAuthDialog()
     {
         AuthErrorMessage = null;
+        ClearEmailForm();
         IsAuthDialogOpen = true;
     }
 
@@ -367,6 +481,84 @@
         {
             IsAuthBusy = false;
         }
+    }
+
+    private async Task SignInWithEmailAsync()
+    {
+        AuthErrorMessage = null;
+        IsAuthBusy = true;
+
+        try
+        {
+            await AuthSessionService.SignInWithEmailAsync(EmailInput, PasswordInput);
+            IsAuthDialogOpen = false;
+            ClearEmailForm();
+        }
+        catch (Exception ex)
+        {
+            AuthErrorMessage = ex.Message;
+        }
+        finally
+        {
+            IsAuthBusy = false;
+        }
+    }
+
+    private async Task SignUpWithEmailAsync()
+    {
+        AuthErrorMessage = null;
+        IsAuthBusy = true;
+
+        try
+        {
+            await AuthSessionService.SignUpWithEmailAsync(EmailInput, PasswordInput);
+            IsAuthDialogOpen = false;
+            ClearEmailForm();
+        }
+        catch (Exception ex)
+        {
+            AuthErrorMessage = ex.Message;
+        }
+        finally
+        {
+            IsAuthBusy = false;
+        }
+    }
+
+    private async Task SendPasswordResetAsync()
+    {
+        AuthErrorMessage = null;
+        PasswordResetSent = false;
+        IsAuthBusy = true;
+
+        try
+        {
+            await AuthSessionService.SendPasswordResetAsync(EmailInput);
+            PasswordResetSent = true;
+        }
+        catch (Exception ex)
+        {
+            AuthErrorMessage = ex.Message;
+        }
+        finally
+        {
+            IsAuthBusy = false;
+        }
+    }
+
+    private void SwitchAuthMode(AuthFormMode mode)
+    {
+        AuthMode = mode;
+        AuthErrorMessage = null;
+        PasswordResetSent = false;
+    }
+
+    private void ClearEmailForm()
+    {
+        EmailInput = string.Empty;
+        PasswordInput = string.Empty;
+        AuthMode = AuthFormMode.SignIn;
+        PasswordResetSent = false;
     }
 
     private async Task TriggerActionAsync(ShellAction action)
@@ -439,6 +631,7 @@
             {
                 "google" => "Google",
                 "apple" => "Apple",
+                "email" => "Email",
                 _ => "external provider"
             };
     }

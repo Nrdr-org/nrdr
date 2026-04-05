@@ -17,6 +17,18 @@ function normalizeAuthError(error) {
             return "A sign-in popup is already open.";
         case "auth/popup-blocked":
             return "The sign-in popup was blocked by the browser.";
+        case "auth/email-already-in-use":
+            return "An account with this email already exists.";
+        case "auth/invalid-email":
+            return "The email address is not valid.";
+        case "auth/weak-password":
+            return "The password is too weak. Use at least 6 characters.";
+        case "auth/user-not-found":
+        case "auth/wrong-password":
+        case "auth/invalid-credential":
+            return "Invalid email or password.";
+        case "auth/too-many-requests":
+            return "Too many attempts. Please try again later.";
         default:
             return error?.message || "Authentication failed.";
     }
@@ -75,6 +87,9 @@ async function loadFirebaseSdk() {
             onAuthStateChanged: authModule.onAuthStateChanged,
             setPersistence: authModule.setPersistence,
             signInWithPopup: authModule.signInWithPopup,
+            signInWithEmailAndPassword: authModule.signInWithEmailAndPassword,
+            createUserWithEmailAndPassword: authModule.createUserWithEmailAndPassword,
+            sendPasswordResetEmail: authModule.sendPasswordResetEmail,
             signOut: authModule.signOut
         }));
     }
@@ -148,6 +163,35 @@ export async function signInWithProvider(config, providerId) {
         const provider = createProvider(bundle, providerId);
         const result = await bundle.signInWithPopup(bundle.auth, provider);
         return normalizeUser(result.user);
+    } catch (error) {
+        throw new Error(normalizeAuthError(error));
+    }
+}
+
+export async function signInWithEmail(config, email, password) {
+    try {
+        const bundle = await getFirebaseBundle(config);
+        const result = await bundle.signInWithEmailAndPassword(bundle.auth, email, password);
+        return normalizeUser(result.user);
+    } catch (error) {
+        throw new Error(normalizeAuthError(error));
+    }
+}
+
+export async function signUpWithEmail(config, email, password) {
+    try {
+        const bundle = await getFirebaseBundle(config);
+        const result = await bundle.createUserWithEmailAndPassword(bundle.auth, email, password);
+        return normalizeUser(result.user);
+    } catch (error) {
+        throw new Error(normalizeAuthError(error));
+    }
+}
+
+export async function sendPasswordReset(config, email) {
+    try {
+        const bundle = await getFirebaseBundle(config);
+        await bundle.sendPasswordResetEmail(bundle.auth, email);
     } catch (error) {
         throw new Error(normalizeAuthError(error));
     }

@@ -50,8 +50,7 @@ public sealed record ShellGame(
 
     private static string BuildTabIconDataUri(string title)
     {
-        var monogram = title[0].ToString().ToUpperInvariant();
-        var svg = $$"""
+        var svg = """
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
           <defs>
             <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
@@ -65,8 +64,7 @@ public sealed record ShellGame(
           </defs>
           <rect width="64" height="64" fill="#05080c" />
           <path d="M32 4 54 14v19c0 13-8.8 22.7-22 27C18.8 55.7 10 46 10 33V14Z" fill="url(#bg)" stroke="url(#gold)" stroke-width="3"/>
-          <path d="M32 14 43 19v9.5c0 6.6-4.3 11.8-11 15.1-6.7-3.3-11-8.5-11-15.1V19Z" fill="none" stroke="#f0c984" stroke-width="3"/>
-          <text x="32" y="40" text-anchor="middle" font-size="22" font-family="Avenir Next, Trebuchet MS, sans-serif" fill="#f0c984">{{monogram}}</text>
+          <path d="M24 45V20h5.4l10.2 14.7V20H45v25h-5.3L29.4 30.3V45Z" fill="#f0c984"/>
         </svg>
         """;
 

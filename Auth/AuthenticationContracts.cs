@@ -19,5 +19,8 @@ public interface IAuthSessionService
 
     Task InitializeAsync(CancellationToken cancellationToken = default);
     Task SignInAsync(string providerKey, CancellationToken cancellationToken = default);
+    Task SignInWithEmailAsync(string email, string password, CancellationToken cancellationToken = default);
+    Task SignUpWithEmailAsync(string email, string password, CancellationToken cancellationToken = default);
+    Task SendPasswordResetAsync(string email, CancellationToken cancellationToken = default);
     Task SignOutAsync(CancellationToken cancellationToken = default);
 }

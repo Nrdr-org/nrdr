@@ -118,6 +118,70 @@ public sealed class FirebaseBrowserAuthSessionService(
         NotifyChanged();
     }
 
+    public async Task SignInWithEmailAsync(string email, string password, CancellationToken cancellationToken = default)
+    {
+        await InitializeAsync(cancellationToken);
+
+        var configuration = authUiConfigurationService.GetConfiguration();
+        if (!configuration.IsEnabled || configuration.Firebase is null)
+        {
+            throw new InvalidOperationException("Firebase authentication is not configured.");
+        }
+
+        var jsModule = await GetModuleAsync(cancellationToken);
+        var browserUser = await jsModule.InvokeAsync<BrowserAuthUser?>(
+            "signInWithEmail",
+            cancellationToken,
+            configuration.Firebase,
+            email,
+            password);
+
+        CurrentUser = MapUser(browserUser, "email")
+            ?? throw new InvalidOperationException("Sign-in did not return a user.");
+        NotifyChanged();
+    }
+
+    public async Task SignUpWithEmailAsync(string email, string password, CancellationToken cancellationToken = default)
+    {
+        await InitializeAsync(cancellationToken);
+
+        var configuration = authUiConfigurationService.GetConfiguration();
+        if (!configuration.IsEnabled || configuration.Firebase is null)
+        {
+            throw new InvalidOperationException("Firebase authentication is not configured.");
+        }
+
+        var jsModule = await GetModuleAsync(cancellationToken);
+        var browserUser = await jsModule.InvokeAsync<BrowserAuthUser?>(
+            "signUpWithEmail",
+            cancellationToken,
+            configuration.Firebase,
+            email,
+            password);
+
+        CurrentUser = MapUser(browserUser, "email")
+            ?? throw new InvalidOperationException("Sign-up did not return a user.");
+        NotifyChanged();
+    }
+
+    public async Task SendPasswordResetAsync(string email, CancellationToken cancellationToken = default)
+    {
+        await InitializeAsync(cancellationToken);
+
+        var configuration = authUiConfigurationService.GetConfiguration();
+        if (!configuration.IsEnabled || configuration.Firebase is null)
+        {
+            throw new InvalidOperationException("Firebase authentication is not configured.");
+        }
+
+        var jsModule = await GetModuleAsync(cancellationToken);
+        await jsModule.InvokeVoidAsync(
+            "sendPasswordReset",
+            cancellationToken,
+            configuration.Firebase,
+            email);
+    }
+
     public async Task SignOutAsync(CancellationToken cancellationToken = default)
     {
         var configuration = authUiConfigurationService.GetConfiguration();
@@ -185,6 +249,11 @@ public sealed class FirebaseBrowserAuthSessionService(
         if (string.IsNullOrWhiteSpace(providerId))
         {
             return "external";
+        }
+
+        if (string.Equals(providerId, "password", StringComparison.OrdinalIgnoreCase))
+        {
+            return "email";
         }
 
         return providerCatalog
